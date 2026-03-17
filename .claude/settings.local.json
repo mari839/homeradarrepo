@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:home.ss.ge)",
+      "WebFetch(domain:api-home.ss.ge)",
+      "Bash(curl:*)",
+      "Bash(node:*)",
+      "Bash(cd:*)",
+      "Bash(dotnet tool:*)",
+      "Bash(taskkill:*)",
+      "Bash(sqlcmd:*)"
+    ]
+  }
+}

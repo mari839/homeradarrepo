@@ -1,0 +1,84 @@
+@using HomeRadar.Services.SsGe.Enums
+
+<div class="card h-100 listing-card @(Listing.IsExclusive ? "border-warning" : "") @(Listing.IsUrgent ? "border-danger" : "")">
+    @if (!string.IsNullOrEmpty(Listing.MainImageUrl))
+    {
+        <div class="position-relative">
+            <img src="@Listing.MainImageUrl" class="card-img-top" alt="@Listing.Title"
+                 style="height: 200px; object-fit: cover;" loading="lazy" />
+            @if (Listing.ImageCount > 1)
+            {
+                <span class="badge bg-dark position-absolute bottom-0 end-0 m-2">
+                    @Listing.ImageCount photos
+                </span>
+            }
+            @if (Listing.VipStatus > 0)
+            {
+                <span class="badge bg-warning text-dark position-absolute top-0 start-0 m-2">
+                    @(((VipStatus)Listing.VipStatus).ToString())
+                </span>
+            }
+            @if (Listing.IsUrgent)
+            {
+                <span class="badge bg-danger position-absolute top-0 end-0 m-2">Urgent</span>
+            }
+            @if (Listing.IsExclusive)
+            {
+                <span class="badge bg-info position-absolute top-0 end-0 m-2" style="@(Listing.IsUrgent ? "top: 30px !important;" : "")">Exclusive</span>
+            }
+        </div>
+    }
+
+    <div class="card-body d-flex flex-column">
+        <div class="d-flex justify-content-between align-items-start mb-2">
+            <div>
+                <h6 class="card-title text-primary fw-bold mb-0">
+                    $@((Listing.Price.PriceUsd ?? 0).ToString("N0"))
+                </h6>
+                <small class="text-muted">
+                    @((Listing.Price.PriceGeo ?? 0).ToString("N0")) GEL
+                    @if (Listing.Price.UnitPriceUsd > 0)
+                    {
+                        <span> | $@((Listing.Price.UnitPriceUsd ?? 0).ToString("N0"))/m²</span>
+                    }
+                </small>
+            </div>
+        </div>
+
+        <p class="card-text small text-muted mb-2">
+            <strong>@Listing.Address.DisplayAddress</strong>
+        </p>
+
+        <div class="d-flex flex-wrap gap-2 mb-2">
+            @if (Listing.TotalArea > 0)
+            {
+                <span class="badge bg-light text-dark border">@Listing.TotalArea m²</span>
+            }
+            @if (!string.IsNullOrEmpty(Listing.FloorNumber))
+            {
+                <span class="badge bg-light text-dark border">
+                    Floor @Listing.FloorNumber@(Listing.TotalAmountOfFloor > 0 ? $"/{Listing.TotalAmountOfFloor}" : "")
+                </span>
+            }
+            @if (Listing.NumberOfBedrooms > 0)
+            {
+                <span class="badge bg-light text-dark border">@Listing.NumberOfBedrooms bed</span>
+            }
+            @if (Listing.Furniture == true)
+            {
+                <span class="badge bg-success text-white">Furnished</span>
+            }
+        </div>
+
+        <div class="mt-auto">
+            <a href="@Listing.DetailPageUrl" target="_blank" rel="noopener noreferrer"
+               class="btn btn-outline-primary btn-sm w-100">
+                View on SS.GE
+            </a>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public SsGeListing Listing { get; set; } = null!;
+}

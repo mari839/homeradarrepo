@@ -1,0 +1,63 @@
+@if (IsVisible)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Save Search Filter</h5>
+                    <button type="button" class="btn-close" @onclick="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Filter Name</label>
+                        <input type="text" class="form-control" @bind="_name" placeholder="e.g. 2-room in Saburtalo" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Telegram Chat ID</label>
+                        <input type="text" class="form-control" @bind="_telegramChatId" placeholder="e.g. 123456789" />
+                        <div class="form-text">
+                            To get your Chat ID:
+                            <ol class="mb-0 small">
+                                <li>Open our bot in Telegram (link from admin)</li>
+                                <li>Send <code>/start</code> to the bot</li>
+                                <li>Send <code>/id</code> — the bot will reply with your Chat ID</li>
+                            </ol>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="Close">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="Save" disabled="@string.IsNullOrWhiteSpace(_name)">
+                        Save Filter
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsVisible { get; set; }
+    [Parameter] public EventCallback<(string Name, string? TelegramChatId)> OnSave { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private string _name = string.Empty;
+    private string? _telegramChatId;
+
+    private async Task Save()
+    {
+        if (string.IsNullOrWhiteSpace(_name)) return;
+
+        var chatId = string.IsNullOrWhiteSpace(_telegramChatId) ? null : _telegramChatId.Trim();
+        await OnSave.InvokeAsync((_name.Trim(), chatId));
+        _name = string.Empty;
+        _telegramChatId = null;
+    }
+
+    private async Task Close()
+    {
+        _name = string.Empty;
+        _telegramChatId = null;
+        await OnClose.InvokeAsync();
+    }
+}

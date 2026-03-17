@@ -1,0 +1,534 @@
+@using HomeRadar.Data
+@using HomeRadar.Data.Entities
+@using Microsoft.EntityFrameworkCore
+@inject ApplicationDbContext Db
+
+<div class="search-filters mb-4">
+    @* Deal Type *@
+    <div class="row mb-3">
+        <div class="col-12">
+            <label class="form-label fw-bold">Deal Type</label>
+            <div class="btn-group w-100" role="group">
+                @foreach (var dt in Enum.GetValues<RealEstateDealType>())
+                {
+                    var isActive = _dealType == dt;
+                    <button type="button"
+                            class="btn @(isActive ? "btn-primary" : "btn-outline-primary")"
+                            @onclick="() => SetDealType(dt)">
+                        @GetDealTypeName(dt)
+                    </button>
+                }
+            </div>
+        </div>
+    </div>
+
+    @* Property Type *@
+    <div class="row mb-3">
+        <div class="col-12">
+            <label class="form-label fw-bold">Property Type</label>
+            <div class="btn-group w-100" role="group">
+                @foreach (var pt in Enum.GetValues<RealEstateType>())
+                {
+                    var isActive = _propertyType == pt;
+                    <button type="button"
+                            class="btn @(isActive ? "btn-primary" : "btn-outline-primary")"
+                            @onclick="() => SetPropertyType(pt)">
+                        @GetPropertyTypeName(pt)
+                    </button>
+                }
+            </div>
+        </div>
+    </div>
+
+    @* Location *@
+    <div class="row mb-3">
+        <div class="col-md-3">
+            <label class="form-label fw-bold">City</label>
+            <select class="form-select" @onchange="OnCityChanged">
+                <option value="">All Cities</option>
+                @foreach (var city in _cities)
+                {
+                    <option value="@city.Id" selected="@(_selectedCityId == city.Id)">@city.Title</option>
+                }
+            </select>
+        </div>
+        @if (_selectedSubDistrictIds.Count > 0)
+        {
+            <div class="col-md-9 d-flex align-items-end">
+                <div class="d-flex flex-wrap gap-1">
+                    @foreach (var sub in _subDistricts.Where(s => _selectedSubDistrictIds.Contains(s.Id)))
+                    {
+                        <span class="badge bg-primary d-flex align-items-center gap-1">
+                            @sub.Title
+                            <button type="button" class="btn-close btn-close-white" style="font-size: 0.5rem;"
+                                    @onclick="() => ToggleSubDistrict(sub.Id, false)"></button>
+                        </span>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+
+    @if (_districtsWithSubs.Count > 0)
+    {
+        <div class="border rounded p-3 mb-3" style="max-height: 350px; overflow-y: auto;">
+            <div class="row">
+                @foreach (var group in _districtsWithSubs)
+                {
+                    <div class="col-md-3 col-sm-6 mb-3">
+                        <div class="form-check fw-bold mb-1">
+                            <input class="form-check-input" type="checkbox"
+                                   id="dist-@group.District.Id"
+                                   checked="@IsDistrictFullySelected(group)"
+                                   @onchange="e => ToggleWholeDistrict(group, (bool)e.Value!)" />
+                            <label class="form-check-label" for="dist-@group.District.Id">@group.District.Title</label>
+                        </div>
+                        @foreach (var sub in group.SubDistricts)
+                        {
+                            <div class="form-check ms-3">
+                                <input class="form-check-input" type="checkbox"
+                                       id="sub-@sub.Id"
+                                       checked="@_selectedSubDistrictIds.Contains(sub.Id)"
+                                       @onchange="e => ToggleSubDistrict(sub.Id, (bool)e.Value!)" />
+                                <label class="form-check-label" for="sub-@sub.Id">@sub.Title</label>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
+    @* Price *@
+    <div class="row mb-3">
+        <div class="col-md-3">
+            <label class="form-label fw-bold">Currency</label>
+            <select class="form-select" @bind="_currencyId">
+                <option value="1">GEL</option>
+                <option value="2">USD</option>
+            </select>
+        </div>
+        <div class="col-md-3">
+            <label class="form-label fw-bold">Price Type</label>
+            <select class="form-select" @bind="_priceType">
+                <option value="1">Total</option>
+                <option value="2">Per m²</option>
+            </select>
+        </div>
+        <div class="col-md-3">
+            <label class="form-label fw-bold">Price From</label>
+            <input type="number" class="form-control" @bind="_priceFrom" placeholder="Min" />
+        </div>
+        <div class="col-md-3">
+            <label class="form-label fw-bold">Price To</label>
+            <input type="number" class="form-control" @bind="_priceTo" placeholder="Max" />
+        </div>
+    </div>
+
+    @* Area *@
+    <div class="row mb-3">
+        <div class="col-md-3">
+            <label class="form-label fw-bold">Area From (m²)</label>
+            <input type="number" class="form-control" @bind="_areaFrom" placeholder="Min" />
+        </div>
+        <div class="col-md-3">
+            <label class="form-label fw-bold">Area To (m²)</label>
+            <input type="number" class="form-control" @bind="_areaTo" placeholder="Max" />
+        </div>
+    </div>
+
+    @* Rooms *@
+    <div class="row mb-3">
+        <div class="col-md-6">
+            <label class="form-label fw-bold">Rooms</label>
+            <div class="btn-group" role="group">
+                @for (int i = 1; i <= 6; i++)
+                {
+                    var room = i;
+                    var isActive = _selectedRooms.Contains(room);
+                    <button type="button"
+                            class="btn btn-sm @(isActive ? "btn-primary" : "btn-outline-secondary")"
+                            @onclick="() => ToggleRoom(room)">
+                        @(room == 6 ? "6+" : room.ToString())
+                    </button>
+                }
+            </div>
+        </div>
+        <div class="col-md-6">
+            <label class="form-label fw-bold">Bedrooms</label>
+            <div class="btn-group" role="group">
+                @for (int i = 1; i <= 5; i++)
+                {
+                    var bed = i;
+                    var isActive = _selectedBedrooms.Contains(bed);
+                    <button type="button"
+                            class="btn btn-sm @(isActive ? "btn-primary" : "btn-outline-secondary")"
+                            @onclick="() => ToggleBedroom(bed)">
+                        @(bed == 5 ? "5+" : bed.ToString())
+                    </button>
+                }
+            </div>
+        </div>
+    </div>
+
+    @* Property Condition *@
+    <div class="row mb-3">
+        <div class="col-12">
+            <label class="form-label fw-bold">Condition</label>
+            <div class="btn-group" role="group">
+                @foreach (var cond in Enum.GetValues<PropertyCondition>())
+                {
+                    var isActive = _selectedConditions.Contains((int)cond);
+                    <button type="button"
+                            class="btn btn-sm @(isActive ? "btn-primary" : "btn-outline-secondary")"
+                            @onclick="() => ToggleCondition((int)cond)">
+                        @GetConditionName(cond)
+                    </button>
+                }
+            </div>
+        </div>
+    </div>
+
+    @* Advanced Filters *@
+    <div class="row mb-3">
+        <div class="col-12">
+            <label class="form-label fw-bold">Additional Features</label>
+            <div class="d-flex flex-wrap gap-3">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="balcony" @bind="_balcony" />
+                    <label class="form-check-label" for="balcony">Balcony</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="elevator" @bind="_elevator" />
+                    <label class="form-check-label" for="elevator">Elevator</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="furniture" @bind="_furniture" />
+                    <label class="form-check-label" for="furniture">Furniture</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="heating" @bind="_heating" />
+                    <label class="form-check-label" for="heating">Heating</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="hotWater" @bind="_hotWater" />
+                    <label class="form-check-label" for="hotWater">Hot Water</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="airCon" @bind="_airConditioning" />
+                    <label class="form-check-label" for="airCon">Air Conditioning</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="storage" @bind="_storageRoom" />
+                    <label class="form-check-label" for="storage">Storage Room</label>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @* Price Category *@
+    <div class="row mb-3">
+        <div class="col-12">
+            <label class="form-label fw-bold">Price Category</label>
+            <div class="d-flex gap-1">
+                @foreach (var ot in _offerTypes)
+                {
+                    var isActive = _selectedOfferTypes.Contains(ot.Value);
+                    <button type="button"
+                            class="btn btn-sm flex-fill @(isActive ? "" : "btn-outline-secondary")"
+                            style="@(isActive ? $"background-color:{ot.Color};color:white;border-color:{ot.Color}" : "")"
+                            @onclick="() => ToggleOfferType(ot.Value)">
+                        @ot.Label
+                    </button>
+                }
+            </div>
+        </div>
+    </div>
+
+    @* Sort & Search *@
+    <div class="row mb-3">
+        <div class="col-md-4">
+            <label class="form-label fw-bold">Sort By</label>
+            <select class="form-select" @bind="_sortOrder">
+                <option value="0">Default</option>
+                <option value="1">Date: Newest First</option>
+                <option value="2">Date: Oldest First</option>
+                <option value="3">Price: Low to High</option>
+                <option value="4">Price: High to Low</option>
+                <option value="5">Area: Low to High</option>
+                <option value="6">Area: High to Low</option>
+            </select>
+        </div>
+        <div class="col-md-8 d-flex align-items-end">
+            <button class="btn btn-primary btn-lg w-100" @onclick="ExecuteSearch" disabled="@IsLoading">
+                @if (IsLoading)
+                {
+                    <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                }
+                @ButtonLabel
+            </button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public EventCallback<SsGeSearchRequest> OnSearch { get; set; }
+    [Parameter] public bool IsLoading { get; set; }
+    [Parameter] public string ButtonLabel { get; set; } = "Search";
+
+    private RealEstateDealType _dealType = RealEstateDealType.Sale;
+    private RealEstateType _propertyType = RealEstateType.Apartment;
+
+    private List<City> _cities = [];
+    private List<DistrictGroup> _districtsWithSubs = [];
+    private List<SubDistrict> _subDistricts = []; // flat list for badge display and LoadFromRequest
+
+    private int? _selectedCityId;
+    private HashSet<int> _selectedSubDistrictIds = [];
+
+    private record DistrictGroup(District District, List<SubDistrict> SubDistricts);
+
+    private int _currencyId = 2; // USD
+    private int _priceType = 1; // Total
+    private int? _priceFrom;
+    private int? _priceTo;
+    private int? _areaFrom;
+    private int? _areaTo;
+
+    private HashSet<int> _selectedRooms = [];
+    private HashSet<int> _selectedBedrooms = [];
+    private HashSet<int> _selectedConditions = [];
+
+    private HashSet<int> _selectedOfferTypes = [];
+
+    private static readonly (int Value, string Label, string Color)[] _offerTypes =
+    [
+        (1, "Top Offer", "#0ac856"),
+        (2, "Good Price", "#a0ce43"),
+        (3, "Average", "#ffd335"),
+        (4, "Expensive", "#ffbb0b"),
+        (5, "Very Expensive", "#fc2357"),
+    ];
+
+    private bool _balcony;
+    private bool _elevator;
+    private bool _furniture;
+    private bool _heating;
+    private bool _hotWater;
+    private bool _airConditioning;
+    private bool _storageRoom;
+
+    private int _sortOrder;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _cities = await Db.Cities.OrderBy(c => c.Order).ToListAsync();
+
+        if (InitialRequest is not null)
+            await LoadFromRequest(InitialRequest);
+    }
+
+    [Parameter] public SsGeSearchRequest? InitialRequest { get; set; }
+
+    public async Task LoadFromRequest(SsGeSearchRequest req)
+    {
+        // Deal type & property type
+        if (req.RealEstateDealType.HasValue && Enum.IsDefined(typeof(RealEstateDealType), req.RealEstateDealType.Value))
+            _dealType = (RealEstateDealType)req.RealEstateDealType.Value;
+        if (req.RealEstateType.HasValue && Enum.IsDefined(typeof(RealEstateType), req.RealEstateType.Value))
+            _propertyType = (RealEstateType)req.RealEstateType.Value;
+
+        // Location
+        if (req.CityIdList is { Count: > 0 })
+        {
+            _selectedCityId = req.CityIdList[0];
+            var districts = await Db.Districts
+                .Where(d => d.CityId == _selectedCityId.Value)
+                .Include(d => d.SubDistricts)
+                .OrderBy(d => d.Title)
+                .ToListAsync();
+            _districtsWithSubs = districts.Select(d => new DistrictGroup(d,
+                d.SubDistricts.OrderBy(s => s.Title).ToList())).ToList();
+            _subDistricts = _districtsWithSubs.SelectMany(g => g.SubDistricts).ToList();
+        }
+
+        if (req.SubdistrictIds is { Count: > 0 })
+        {
+            _selectedSubDistrictIds = [.. req.SubdistrictIds];
+        }
+
+        // Price
+        if (req.CurrencyId.HasValue) _currencyId = req.CurrencyId.Value;
+        if (req.PriceType.HasValue) _priceType = req.PriceType.Value;
+        _priceFrom = req.PriceFrom;
+        _priceTo = req.PriceTo;
+
+        // Area
+        _areaFrom = req.AreaFrom;
+        _areaTo = req.AreaTo;
+
+        // Rooms & bedrooms
+        if (req.Rooms is not null) _selectedRooms = [.. req.Rooms];
+        if (req.BedroomsCount is not null) _selectedBedrooms = [.. req.BedroomsCount];
+
+        // Conditions
+        if (req.RealEstateStatuses is not null) _selectedConditions = [.. req.RealEstateStatuses];
+
+        // Offer types (price category)
+        if (req.OfferType is not null) _selectedOfferTypes = [.. req.OfferType];
+
+        // Advanced
+        if (req.AdvancedSearch is not null)
+        {
+            _balcony = req.AdvancedSearch.Balcony == true;
+            _elevator = req.AdvancedSearch.Elevator == true;
+            _furniture = req.AdvancedSearch.Furniture == true;
+            _heating = req.AdvancedSearch.Heating == true;
+            _hotWater = req.AdvancedSearch.HotWater == true;
+            _airConditioning = req.AdvancedSearch.AirConditioning == true;
+            _storageRoom = req.AdvancedSearch.StorageRoom == true;
+        }
+
+        // Sort
+        _sortOrder = req.Order ?? 0;
+
+        StateHasChanged();
+    }
+
+    private void SetDealType(RealEstateDealType dt) => _dealType = dt;
+    private void SetPropertyType(RealEstateType pt) => _propertyType = pt;
+
+    private async Task OnCityChanged(ChangeEventArgs e)
+    {
+        _selectedCityId = int.TryParse(e.Value?.ToString(), out var id) ? id : null;
+        _selectedSubDistrictIds.Clear();
+
+        if (_selectedCityId.HasValue)
+        {
+            var districts = await Db.Districts
+                .Where(d => d.CityId == _selectedCityId.Value)
+                .Include(d => d.SubDistricts)
+                .OrderBy(d => d.Title)
+                .ToListAsync();
+
+            _districtsWithSubs = districts.Select(d => new DistrictGroup(d,
+                d.SubDistricts.OrderBy(s => s.Title).ToList())).ToList();
+            _subDistricts = _districtsWithSubs.SelectMany(g => g.SubDistricts).ToList();
+        }
+        else
+        {
+            _districtsWithSubs = [];
+            _subDistricts = [];
+        }
+    }
+
+    private void ToggleWholeDistrict(DistrictGroup group, bool isChecked)
+    {
+        foreach (var sub in group.SubDistricts)
+        {
+            if (isChecked)
+                _selectedSubDistrictIds.Add(sub.Id);
+            else
+                _selectedSubDistrictIds.Remove(sub.Id);
+        }
+    }
+
+    private bool IsDistrictFullySelected(DistrictGroup group)
+        => group.SubDistricts.Count > 0 && group.SubDistricts.All(s => _selectedSubDistrictIds.Contains(s.Id));
+
+    private void ToggleSubDistrict(int id, bool isChecked)
+    {
+        if (isChecked) _selectedSubDistrictIds.Add(id);
+        else _selectedSubDistrictIds.Remove(id);
+    }
+
+    private void ToggleRoom(int room)
+    {
+        if (!_selectedRooms.Remove(room)) _selectedRooms.Add(room);
+    }
+
+    private void ToggleBedroom(int bed)
+    {
+        if (!_selectedBedrooms.Remove(bed)) _selectedBedrooms.Add(bed);
+    }
+
+    private void ToggleCondition(int cond)
+    {
+        if (!_selectedConditions.Remove(cond)) _selectedConditions.Add(cond);
+    }
+
+    private void ToggleOfferType(int ot)
+    {
+        if (!_selectedOfferTypes.Remove(ot)) _selectedOfferTypes.Add(ot);
+    }
+
+    private async Task ExecuteSearch()
+    {
+        var request = BuildRequest();
+        await OnSearch.InvokeAsync(request);
+    }
+
+    public SsGeSearchRequest BuildRequest()
+    {
+        var hasAdvanced = _balcony || _elevator || _furniture || _heating || _hotWater || _airConditioning || _storageRoom;
+
+        return new SsGeSearchRequest
+        {
+            RealEstateType = (int)_propertyType,
+            RealEstateDealType = (int)_dealType,
+            CityIdList = _selectedCityId.HasValue ? [_selectedCityId.Value] : null,
+            SubdistrictIds = _selectedSubDistrictIds.Count > 0 ? _selectedSubDistrictIds.ToList() : null,
+            CurrencyId = _currencyId,
+            PriceType = _priceType,
+            PriceFrom = _priceFrom,
+            PriceTo = _priceTo,
+            AreaFrom = _areaFrom,
+            AreaTo = _areaTo,
+            Rooms = _selectedRooms.Count > 0 ? _selectedRooms.OrderBy(r => r).ToList() : null,
+            BedroomsCount = _selectedBedrooms.Count > 0 ? _selectedBedrooms.OrderBy(b => b).ToList() : null,
+            RealEstateStatuses = _selectedConditions.Count > 0 ? _selectedConditions.ToList() : null,
+            OfferType = _selectedOfferTypes.Count > 0 ? _selectedOfferTypes.OrderBy(o => o).ToList() : null,
+            Order = _sortOrder != 0 ? _sortOrder : null,
+            AdvancedSearch = hasAdvanced ? new SsGeAdvancedSearch
+            {
+                Balcony = _balcony ? true : null,
+                Elevator = _elevator ? true : null,
+                Furniture = _furniture ? true : null,
+                Heating = _heating ? true : null,
+                HotWater = _hotWater ? true : null,
+                AirConditioning = _airConditioning ? true : null,
+                StorageRoom = _storageRoom ? true : null,
+            } : null,
+            Page = 1,
+            PageSize = 16
+        };
+    }
+
+    private static string GetDealTypeName(RealEstateDealType dt) => dt switch
+    {
+        RealEstateDealType.Sale => "For Sale",
+        RealEstateDealType.Rent => "For Rent",
+        RealEstateDealType.DailyRent => "Daily Rent",
+        RealEstateDealType.Mortgage => "Mortgage",
+        _ => dt.ToString()
+    };
+
+    private static string GetPropertyTypeName(RealEstateType pt) => pt switch
+    {
+        RealEstateType.Apartment => "Apartment",
+        RealEstateType.PrivateHouse => "House",
+        RealEstateType.Commercial => "Commercial",
+        RealEstateType.Land => "Land",
+        RealEstateType.Hotel => "Hotel",
+        _ => pt.ToString()
+    };
+
+    private static string GetConditionName(PropertyCondition c) => c switch
+    {
+        PropertyCondition.BlackFrame => "Black Frame",
+        PropertyCondition.WhiteFrame => "White Frame",
+        PropertyCondition.GreenFrame => "Green Frame",
+        PropertyCondition.Renovated => "Renovated",
+        _ => c.ToString()
+    };
+}
