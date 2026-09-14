@@ -1,0 +1,19 @@
+[Unit]
+Description=HomeRadar
+After=network.target
+
+[Service]
+Type=notify
+WorkingDirectory=/var/www/homeradar
+ExecStart=/usr/bin/dotnet /var/www/homeradar/HomeRadar.dll
+Restart=always
+RestartSec=10
+KillSignal=SIGINT
+SyslogIdentifier=homeradar
+User=homeradar
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=ASPNETCORE_URLS=http://0.0.0.0:8080
+Environment=DOTNET_PRINT_TELEMETRY_MESSAGE=false
+
+[Install]
+WantedBy=multi-user.target
