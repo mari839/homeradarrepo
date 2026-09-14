@@ -1,0 +1,286 @@
+@page "/myhome-saved-filters"
+@rendermode InteractiveServer
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using HomeRadar.Components.MyHome
+@using HomeRadar.Data
+@using HomeRadar.Data.Entities
+@using HomeRadar.Services.MyHome
+@using HomeRadar.Services.MyHome.Models
+@using HomeRadar.Services.Telegram
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@inject ApplicationDbContext Db
+@inject AuthenticationStateProvider AuthStateProvider
+@inject MyHomeApiClient ApiClient
+@inject TelegramNotificationService TelegramService
+@inject ILogger<MyHomeSavedFilters> Logger
+
+<PageTitle>MyHome Saved Filters - HomeRadar</PageTitle>
+
+<h3 class="mb-4">MyHome.ge Saved Filters</h3>
+
+@if (_message is not null)
+{
+    <div class="alert @(_messageIsError ? "alert-danger" : "alert-success") alert-dismissible">
+        @_message
+        <button type="button" class="btn-close" @onclick="() => _message = null"></button>
+    </div>
+}
+
+@* Add New Filter *@
+<div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">Add New Filter</h5>
+        <button class="btn btn-sm @(_showNewFilter ? "btn-outline-secondary" : "btn-primary")"
+                @onclick="() => _showNewFilter = !_showNewFilter">
+            @(_showNewFilter ? "Collapse" : "New Filter")
+        </button>
+    </div>
+    @if (_showNewFilter)
+    {
+        <div class="card-body">
+            <MyHomeSearchFilters @ref="_newFilters" OnSearch="HandlePreview" IsLoading="_isPreviewLoading" ButtonLabel="Preview" />
+
+            @if (_previewCount.HasValue)
+            {
+                <div class="alert alert-info">This filter matches <strong>@_previewCount.Value</strong> listings.</div>
+            }
+
+            <hr />
+            <div class="row mb-3">
+                <div class="col-md-5">
+                    <label class="form-label fw-bold">Filter Name</label>
+                    <input type="text" class="form-control" @bind="_newFilterName" placeholder="e.g. Apartments in Saburtalo" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label fw-bold">Listings to fetch</label>
+                    <input type="number" class="form-control" @bind="_newPerPage" min="20" max="500" />
+                    <div class="form-text">More = catches listings past VIP (default 200)</div>
+                </div>
+                <div class="col-md-4 d-flex align-items-end">
+                    <button class="btn btn-success w-100" @onclick="SaveNewFilter"
+                            disabled="@string.IsNullOrWhiteSpace(_newFilterName)">Save Filter</button>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@* Existing Filters *@
+@if (_filters is null)
+{
+    <p>Loading...</p>
+}
+else if (_filters.Count == 0)
+{
+    <div class="alert alert-info">No saved filters yet. Click "New Filter" above to create one.</div>
+}
+else
+{
+    <div class="row row-cols-1 row-cols-md-2 g-3">
+        @foreach (var filter in _filters)
+        {
+            <div class="col">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start">
+                            @if (_editingId == filter.Id)
+                            {
+                                <input type="text" class="form-control form-control-sm w-50" @bind="_editName" />
+                            }
+                            else
+                            {
+                                <h5 class="card-title mb-1">@filter.Name</h5>
+                            }
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" checked="@filter.IsActive"
+                                       @onchange="() => ToggleActive(filter)" />
+                                <label class="form-check-label small">@(filter.IsActive ? "Active" : "Paused")</label>
+                            </div>
+                        </div>
+
+                        <small class="text-muted d-block mb-3">
+                            Created @filter.CreatedAt.ToString("d")
+                            @if (filter.LastCheckedAt.HasValue)
+                            {
+                                <span> | Last checked @filter.LastCheckedAt.Value.ToString("g")</span>
+                            }
+                            <span> | Fetching @filter.PerPage listings</span>
+                        </small>
+
+                        @* Telegram *@
+                        <div class="mb-3">
+                            @if (!string.IsNullOrEmpty(filter.TelegramChatId))
+                            {
+                                <span class="badge bg-success me-2">Telegram Connected</span>
+                                <button class="btn btn-outline-info btn-sm" @onclick="() => TestTelegram(filter)">Test</button>
+                                <button class="btn btn-outline-warning btn-sm" @onclick="() => DisconnectTelegram(filter)">Disconnect</button>
+                            }
+                            else if (!string.IsNullOrEmpty(filter.TelegramLinkCode))
+                            {
+                                <div class="alert alert-warning py-2 mb-0">
+                                    <small>
+                                        <strong>Waiting for connection...</strong><br/>
+                                        Add <a href="https://t.me/Marishomeradarbot" target="_blank">@@Marishomeradarbot</a> and send: <code>/connect @filter.TelegramLinkCode</code>
+                                    </small>
+                                    <div class="mt-2">
+                                        <button class="btn btn-outline-secondary btn-sm" @onclick="() => CancelLink(filter)">Cancel</button>
+                                        <button class="btn btn-outline-primary btn-sm" @onclick="() => RefreshFilter(filter)">Refresh</button>
+                                    </div>
+                                </div>
+                            }
+                            else
+                            {
+                                <button class="btn btn-outline-primary btn-sm" @onclick="() => GenerateLinkCode(filter)">Connect Telegram</button>
+                            }
+                        </div>
+                    </div>
+                    @if (_editCriteriaId == filter.Id)
+                    {
+                        <div class="card-body border-top">
+                            <h6 class="fw-bold mb-3">Edit Filter Criteria</h6>
+                            <MyHomeSearchFilters @ref="_editCriteriaFilters"
+                                                 InitialQueryString="@filter.SearchQueryString"
+                                                 OnSearch="HandleEditPreview"
+                                                 IsLoading="_isEditLoading"
+                                                 ButtonLabel="Preview" />
+                            @if (_editPreviewCount.HasValue)
+                            {
+                                <div class="alert alert-info py-2">Matches <strong>@_editPreviewCount.Value</strong> listings.</div>
+                            }
+                            <div class="d-flex gap-2 mt-2">
+                                <button class="btn btn-success btn-sm" @onclick="() => SaveEditCriteria(filter)"
+                                        disabled="@(_editNewQueryString is null)">Save Criteria</button>
+                                <button class="btn btn-secondary btn-sm" @onclick="CancelEditCriteria">Cancel</button>
+                            </div>
+                        </div>
+                    }
+                    <div class="card-footer bg-transparent">
+                        @if (_editingId == filter.Id)
+                        {
+                            <div class="d-flex gap-2 align-items-end mb-2">
+                                <div class="flex-grow-1">
+                                    <label class="form-label small mb-1">Name</label>
+                                    <input type="text" class="form-control form-control-sm" @bind="_editName" />
+                                </div>
+                                <div style="width: 120px;">
+                                    <label class="form-label small mb-1">Fetch limit</label>
+                                    <input type="number" class="form-control form-control-sm" @bind="_editPerPage" min="20" max="500" />
+                                </div>
+                            </div>
+                            <button class="btn btn-success btn-sm" @onclick="() => SaveEdit(filter)">Save</button>
+                            <button class="btn btn-secondary btn-sm" @onclick="() => _editingId = null">Cancel</button>
+                        }
+                        else
+                        {
+                            <button class="btn btn-outline-primary btn-sm" @onclick="() => StartEdit(filter)">Edit</button>
+                            <button class="btn btn-outline-secondary btn-sm" @onclick="() => StartEditCriteria(filter)">
+                                @(_editCriteriaId == filter.Id ? "Collapse" : "Edit Criteria")</button>
+                            <button class="btn btn-outline-danger btn-sm" @onclick="() => Delete(filter)">Delete</button>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private List<MyHomeSavedFilter>? _filters;
+    private string? _userId;
+    private string? _message;
+    private bool _messageIsError;
+
+    private bool _showNewFilter;
+    private string _newFilterName = string.Empty;
+    private int _newPerPage = 200;
+    private MyHomeSearchFilters? _newFilters;
+    private string? _newQs;
+    private int? _previewCount;
+    private bool _isPreviewLoading;
+
+    private int? _editingId;
+    private string _editName = string.Empty;
+    private int _editPerPage = 200;
+    private int? _editCriteriaId;
+    private MyHomeSearchFilters? _editCriteriaFilters;
+    private string? _editNewQueryString;
+    private int? _editPreviewCount;
+    private bool _isEditLoading;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        _userId = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        await LoadFilters();
+    }
+
+    private async Task LoadFilters()
+    {
+        if (_userId is null) return;
+        _filters = await Db.MyHomeSavedFilters.Where(f => f.UserId == _userId).OrderByDescending(f => f.CreatedAt).ToListAsync();
+    }
+
+    private async Task HandlePreview(string qs)
+    {
+        _newQs = qs;
+        _isPreviewLoading = true;
+        StateHasChanged();
+        try
+        {
+            var r = await ApiClient.SearchAsync(qs);
+            _previewCount = r.Data.Listings.Count;
+        }
+        catch { _previewCount = null; }
+        finally { _isPreviewLoading = false; }
+    }
+
+    private async Task SaveNewFilter()
+    {
+        var qs = _newFilters?.BuildQueryString() ?? _newQs;
+        if (string.IsNullOrWhiteSpace(_newFilterName) || qs is null || _userId is null) return;
+        try
+        {
+            var filter = new MyHomeSavedFilter { UserId = _userId, Name = _newFilterName.Trim(), SearchQueryString = qs, PerPage = Math.Clamp(_newPerPage, 20, 500) };
+            Db.MyHomeSavedFilters.Add(filter);
+            await Db.SaveChangesAsync();
+            _newFilterName = string.Empty; _newQs = null; _previewCount = null; _showNewFilter = false;
+            _message = $"Filter \"{filter.Name}\" saved!"; _messageIsError = false;
+            await LoadFilters();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to save MyHome filter");
+            _message = "Failed to save filter."; _messageIsError = true;
+        }
+    }
+
+    private async Task ToggleActive(MyHomeSavedFilter f) { f.IsActive = !f.IsActive; await Db.SaveChangesAsync(); }
+    private void StartEdit(MyHomeSavedFilter f) { _editingId = f.Id; _editName = f.Name; _editPerPage = f.PerPage; }
+    private async Task SaveEdit(MyHomeSavedFilter f) { if (!string.IsNullOrWhiteSpace(_editName)) { f.Name = _editName.Trim(); f.PerPage = Math.Clamp(_editPerPage, 20, 500); await Db.SaveChangesAsync(); } _editingId = null; }
+
+    private void StartEditCriteria(MyHomeSavedFilter f) { if (_editCriteriaId == f.Id) { CancelEditCriteria(); return; } _editCriteriaId = f.Id; _editNewQueryString = null; _editPreviewCount = null; }
+    private void CancelEditCriteria() { _editCriteriaId = null; _editNewQueryString = null; _editPreviewCount = null; }
+    private async Task HandleEditPreview(string qs) { _editNewQueryString = qs; _isEditLoading = true; StateHasChanged(); try { var r = await ApiClient.SearchAsync(qs); _editPreviewCount = r.Data.Listings.Count; } catch { _editPreviewCount = null; } finally { _isEditLoading = false; } }
+    private async Task SaveEditCriteria(MyHomeSavedFilter f) { if (_editNewQueryString is null) return; f.SearchQueryString = _editNewQueryString; f.LastSeenListingId = null; await Db.SaveChangesAsync(); CancelEditCriteria(); _message = $"Filter \"{f.Name}\" updated."; _messageIsError = false; }
+
+    private async Task Delete(MyHomeSavedFilter f) { var n = f.Name; Db.MyHomeSavedFilters.Remove(f); await Db.SaveChangesAsync(); _filters?.Remove(f); _message = $"Filter \"{n}\" deleted."; _messageIsError = false; }
+
+    private async Task GenerateLinkCode(MyHomeSavedFilter f) { f.TelegramLinkCode = GenerateCode(); await Db.SaveChangesAsync(); }
+    private async Task CancelLink(MyHomeSavedFilter f) { f.TelegramLinkCode = null; await Db.SaveChangesAsync(); }
+    private async Task RefreshFilter(MyHomeSavedFilter f) { await Db.Entry(f).ReloadAsync(); }
+    private async Task DisconnectTelegram(MyHomeSavedFilter f) { f.TelegramChatId = null; f.TelegramLinkCode = null; await Db.SaveChangesAsync(); }
+
+    private async Task TestTelegram(MyHomeSavedFilter f)
+    {
+        if (string.IsNullOrEmpty(f.TelegramChatId)) { _message = "No Telegram connected."; _messageIsError = true; return; }
+        var ok = await TelegramService.SendTestMessageAsync(f.TelegramChatId);
+        _message = ok ? "Test message sent!" : "Failed to send. Check bot access."; _messageIsError = !ok;
+    }
+
+    private static string GenerateCode()
+    {
+        const string chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+        return new string(Enumerable.Range(0, 8).Select(_ => chars[Random.Shared.Next(chars.Length)]).ToArray());
+    }
+}

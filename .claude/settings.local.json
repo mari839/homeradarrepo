@@ -8,7 +8,17 @@
       "Bash(cd:*)",
       "Bash(dotnet tool:*)",
       "Bash(taskkill:*)",
-      "Bash(sqlcmd:*)"
+      "Bash(sqlcmd:*)",
+      "WebFetch(domain:www.myhome.ge)",
+      "Bash(dotnet ef:*)",
+      "Bash(timeout 35 dotnet run)",
+      "Bash(dotnet build:*)",
+      "Bash(sqlcmd -S \"\\(localdb\\)\\\\mssqllocaldb\" -d \"aspnet-HomeRadar-52fbc493-f407-4dab-b628-cff0b882942f\" -y 2000 -Q \"SET QUOTED_IDENTIFIER ON; SELECT Id, Name, LastSeenListingId, LastSeenUpdatedAt, LastCheckedAt FROM MyHomeSavedFilters;\")",
+      "Bash(tasklist)",
+      "Bash(sqlcmd -S \"\\(localdb\\)\\\\mssqllocaldb\" -d \"aspnet-HomeRadar-52fbc493-f407-4dab-b628-cff0b882942f\" -y 200 -Q \"SET QUOTED_IDENTIFIER ON; SELECT Id, LastSeenListingId, LastCheckedAt FROM MyHomeSavedFilters;\")",
+      "Bash(sqlcmd -S \"\\(localdb\\)\\\\mssqllocaldb\" -d \"aspnet-HomeRadar-52fbc493-f407-4dab-b628-cff0b882942f\" -y 200 -Q \"SET QUOTED_IDENTIFIER ON; SELECT Id, Name, LastSeenListingId, LastSeenUpdatedAt, LastCheckedAt FROM MyHomeSavedFilters;\")",
+      "Bash(timeout 55 dotnet run)",
+      "Bash(timeout 60 dotnet run)"
     ]
   }
 }

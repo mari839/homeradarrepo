@@ -2,6 +2,7 @@ using HomeRadar.Components;
 using HomeRadar.Components.Account;
 using HomeRadar.Data;
 using HomeRadar.Services.Monitoring;
+using HomeRadar.Services.MyHome;
 using HomeRadar.Services.SsGe;
 using HomeRadar.Services.Telegram;
 using Microsoft.AspNetCore.Components.Authorization;
@@ -33,7 +34,7 @@ builder.Services.AddDatabaseDeveloperPageExceptionFilter();
 builder.Services.AddIdentityCore<ApplicationUser>(options =>
     {
         options.SignIn.RequireConfirmedAccount = false;
-        options.Stores.SchemaVersion = IdentitySchemaVersions.Version3;
+        options.Stores.SchemaVersion = IdentitySchemaVersions.Version2;
     })
     .AddEntityFrameworkStores<ApplicationDbContext>()
     .AddSignInManager()
@@ -50,12 +51,28 @@ builder.Services.AddHostedService<SsGeReferenceSyncService>();
 
 // Telegram notifications
 builder.Services.Configure<TelegramOptions>(builder.Configuration.GetSection(TelegramOptions.SectionName));
-builder.Services.AddHttpClient("Telegram");
+builder.Services.AddHttpClient("Telegram")
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(2)
+    });
 builder.Services.AddSingleton<TelegramNotificationService>();
 builder.Services.AddHostedService<TelegramBotListenerService>();
 
-// Listing monitor
+// Listing monitor (SS.GE)
 builder.Services.AddHostedService<ListingMonitorService>();
+
+// MyHome.ge integration
+builder.Services.Configure<MyHomeOptions>(builder.Configuration.GetSection(MyHomeOptions.SectionName));
+builder.Services.AddHttpClient("MyHomeStatements")
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(2)
+    });
+builder.Services.AddHttpClient("MyHomeLocations");
+builder.Services.AddScoped<MyHomeApiClient>();
+builder.Services.AddHostedService<MyHomeReferenceSyncService>();
+builder.Services.AddHostedService<MyHomeMonitorService>();
 
 var app = builder.Build();
 
@@ -70,7 +87,7 @@ else
     // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
     app.UseHsts();
 }
-app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
+app.UseStatusCodePagesWithReExecute("/not-found");
 app.UseHttpsRedirection();
 
 app.UseAntiforgery();

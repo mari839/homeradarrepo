@@ -11,7 +11,6 @@ public class TelegramNotificationService
     private readonly TelegramOptions _options;
     private readonly ILogger<TelegramNotificationService> _logger;
 
-    // Telegram limits media group to 10 items
     private const int MaxPhotosPerAlbum = 10;
 
     public TelegramNotificationService(
@@ -29,149 +28,128 @@ public class TelegramNotificationService
     public async Task<bool> SendListingNotificationAsync(
         string chatId, SsGeListing listing, string filterName, CancellationToken ct = default)
     {
-        if (!IsConfigured)
-        {
-            _logger.LogWarning("Telegram bot token is not configured");
-            return false;
-        }
+        if (!IsConfigured) return false;
 
         var caption = FormatListingCaption(listing, filterName);
         var imageUrls = GetAllImageUrls(listing);
 
         if (imageUrls.Count > 1)
             return await SendMediaGroupAsync(chatId, imageUrls, caption, ct);
-
         if (imageUrls.Count == 1)
-            return await SendPhotoAsync(chatId, imageUrls[0], caption, ct);
-
-        return await SendMessageAsync(chatId, caption, ct);
+            return await SendPhotoDirectAsync(chatId, imageUrls[0], caption, ct);
+        return await SendTextAsync(chatId, caption, ct);
     }
 
     public async Task<bool> SendTestMessageAsync(string chatId, CancellationToken ct = default)
     {
         if (!IsConfigured) return false;
-        return await SendMessageAsync(chatId, "HomeRadar: Test notification - your Telegram is connected!", ct);
+        return await SendTextAsync(chatId, "HomeRadar: Test notification - your Telegram is connected!", ct);
     }
 
-    private async Task<bool> SendMediaGroupAsync(string chatId, List<string> imageUrls, string caption, CancellationToken ct)
+    public async Task<bool> SendMediaGroupAsync(string chatId, List<string> imageUrls, string caption, CancellationToken ct)
     {
-        try
+        var media = imageUrls.Select((imgUrl, i) => new
         {
-            var url = $"https://api.telegram.org/bot{_options.BotToken}/sendMediaGroup";
+            type = "photo",
+            media = imgUrl,
+            caption = i == 0 ? caption : "",
+            parse_mode = i == 0 ? "HTML" : ""
+        }).ToArray();
 
-            var media = imageUrls.Select((imgUrl, i) => new
-            {
-                type = "photo",
-                media = imgUrl,
-                // Caption goes on the first photo only
-                caption = i == 0 ? caption : "",
-                parse_mode = i == 0 ? "HTML" : ""
-            }).ToArray();
+        var payload = new { chat_id = chatId, media };
+        var result = await PostWithRetryAsync($"sendMediaGroup", payload, ct);
 
-            var payload = new
-            {
-                chat_id = chatId,
-                media
-            };
-
-            var content = new StringContent(
-                JsonSerializer.Serialize(payload),
-                Encoding.UTF8,
-                "application/json");
-
-            var response = await _httpClient.PostAsync(url, content, ct);
-
-            if (!response.IsSuccessStatusCode)
-            {
-                var body = await response.Content.ReadAsStringAsync(ct);
-                _logger.LogWarning("Telegram sendMediaGroup failed for chat {ChatId}: {Status} {Body}, falling back to single photo",
-                    chatId, response.StatusCode, body);
-                // Fall back to single photo with first image
-                return await SendPhotoAsync(chatId, imageUrls[0], caption, ct);
-            }
-
-            return true;
-        }
-        catch (Exception ex)
+        if (!result)
         {
-            _logger.LogError(ex, "Failed to send Telegram media group to chat {ChatId}", chatId);
-            return await SendPhotoAsync(chatId, imageUrls[0], caption, ct);
+            // Fall back to single photo
+            return await SendPhotoDirectAsync(chatId, imageUrls[0], caption, ct);
         }
+        return true;
     }
 
-    private async Task<bool> SendPhotoAsync(string chatId, string photoUrl, string caption, CancellationToken ct)
+    public async Task<bool> SendPhotoDirectAsync(string chatId, string photoUrl, string caption, CancellationToken ct)
     {
-        try
+        var payload = new { chat_id = chatId, photo = photoUrl, caption, parse_mode = "HTML" };
+        var result = await PostWithRetryAsync("sendPhoto", payload, ct);
+
+        if (!result)
         {
-            var url = $"https://api.telegram.org/bot{_options.BotToken}/sendPhoto";
-            var payload = new
-            {
-                chat_id = chatId,
-                photo = photoUrl,
-                caption,
-                parse_mode = "HTML"
-            };
-
-            var content = new StringContent(
-                JsonSerializer.Serialize(payload),
-                Encoding.UTF8,
-                "application/json");
-
-            var response = await _httpClient.PostAsync(url, content, ct);
-
-            if (!response.IsSuccessStatusCode)
-            {
-                var body = await response.Content.ReadAsStringAsync(ct);
-                _logger.LogWarning("Telegram sendPhoto failed for chat {ChatId}: {Status} {Body}, falling back to text",
-                    chatId, response.StatusCode, body);
-                return await SendMessageAsync(chatId, caption, ct);
-            }
-
-            return true;
+            return await SendTextAsync(chatId, caption, ct);
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to send Telegram photo to chat {ChatId}", chatId);
-            return await SendMessageAsync(chatId, caption, ct);
-        }
+        return true;
     }
 
-    private async Task<bool> SendMessageAsync(string chatId, string text, CancellationToken ct)
+    public async Task<bool> SendTextAsync(string chatId, string text, CancellationToken ct)
     {
-        try
+        var payload = new { chat_id = chatId, text, parse_mode = "HTML", disable_web_page_preview = false };
+        return await PostWithRetryAsync("sendMessage", payload, ct);
+    }
+
+    private async Task<bool> PostWithRetryAsync(string method, object payload, CancellationToken ct)
+    {
+        const int maxRetries = 3;
+
+        for (int attempt = 1; attempt <= maxRetries; attempt++)
         {
-            var url = $"https://api.telegram.org/bot{_options.BotToken}/sendMessage";
-            var payload = new
+            try
             {
-                chat_id = chatId,
-                text,
-                parse_mode = "HTML",
-                disable_web_page_preview = false
-            };
+                var url = $"https://api.telegram.org/bot{_options.BotToken}/{method}";
+                var content = new StringContent(
+                    JsonSerializer.Serialize(payload),
+                    Encoding.UTF8,
+                    "application/json");
 
-            var content = new StringContent(
-                JsonSerializer.Serialize(payload),
-                Encoding.UTF8,
-                "application/json");
+                var response = await _httpClient.PostAsync(url, content, ct);
 
-            var response = await _httpClient.PostAsync(url, content, ct);
+                if (response.IsSuccessStatusCode)
+                    return true;
 
-            if (!response.IsSuccessStatusCode)
-            {
                 var body = await response.Content.ReadAsStringAsync(ct);
-                _logger.LogWarning("Telegram API error for chat {ChatId}: {Status} {Body}",
-                    chatId, response.StatusCode, body);
+
+                // Handle rate limiting — wait and retry
+                if ((int)response.StatusCode == 429 && attempt < maxRetries)
+                {
+                    var retryAfter = ParseRetryAfter(body);
+                    _logger.LogWarning("Telegram rate limited on {Method}, retrying after {Seconds}s (attempt {Attempt}/{Max})",
+                        method, retryAfter, attempt, maxRetries);
+                    await Task.Delay(TimeSpan.FromSeconds(retryAfter + 1), ct);
+                    continue;
+                }
+
+                _logger.LogWarning("Telegram {Method} failed for chat: {Status} {Body}",
+                    method, response.StatusCode, body);
                 return false;
             }
+            catch (HttpRequestException ex) when (attempt < maxRetries)
+            {
+                _logger.LogWarning(ex, "Telegram {Method} connection error, retrying (attempt {Attempt}/{Max})",
+                    method, attempt, maxRetries);
+                await Task.Delay(TimeSpan.FromSeconds(attempt * 3), ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to call Telegram {Method}", method);
+                return false;
+            }
+        }
 
-            return true;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to send Telegram message to chat {ChatId}", chatId);
-            return false;
-        }
+        return false;
     }
+
+    private static int ParseRetryAfter(string body)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            if (doc.RootElement.TryGetProperty("parameters", out var p) &&
+                p.TryGetProperty("retry_after", out var ra))
+                return ra.GetInt32();
+        }
+        catch { }
+        return 5; // default 5 seconds
+    }
+
+    // ===== SS.GE formatting =====
 
     private static string FormatListingCaption(SsGeListing listing, string filterName)
     {
@@ -182,7 +160,6 @@ public class TelegramNotificationService
         if (!string.IsNullOrEmpty(listing.Title))
             sb.AppendLine(EscapeHtml(listing.Title));
 
-        // Price
         var priceUsd = listing.Price.PriceUsd ?? 0;
         var priceGel = listing.Price.PriceGeo ?? 0;
         if (priceUsd > 0)
@@ -190,12 +167,10 @@ public class TelegramNotificationService
         else if (priceGel > 0)
             sb.AppendLine($"<b>{priceGel:N0} GEL</b>");
 
-        // Per sqm
         var unitUsd = listing.Price.UnitPriceUsd ?? 0;
         if (unitUsd > 0)
             sb.AppendLine($"${unitUsd:N0}/m²");
 
-        // Details line
         var details = new List<string>();
         if (listing.TotalArea > 0) details.Add($"{listing.TotalArea} m²");
         if (!string.IsNullOrEmpty(listing.FloorNumber))
@@ -206,7 +181,6 @@ public class TelegramNotificationService
         if (details.Count > 0)
             sb.AppendLine(string.Join(" | ", details));
 
-        // Address
         var address = listing.Address.DisplayAddress;
         if (!string.IsNullOrEmpty(address))
             sb.AppendLine($"📍 {EscapeHtml(address)}");
@@ -220,10 +194,10 @@ public class TelegramNotificationService
     private static List<string> GetAllImageUrls(SsGeListing listing)
     {
         return listing.AppImages
-            .OrderBy(i => i.IsMain ? 0 : 1) // main image first
+            .OrderBy(i => i.IsMain ? 0 : 1)
             .ThenBy(i => i.OrderNo)
             .Where(i => !string.IsNullOrEmpty(i.FileName))
-            .Select(i => i.FileName!.Replace("_Thumb.", ".")) // full size
+            .Select(i => i.FileName!.Replace("_Thumb.", "."))
             .Take(MaxPhotosPerAlbum)
             .ToList();
     }

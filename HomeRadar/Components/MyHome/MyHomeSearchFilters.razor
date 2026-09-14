@@ -1,0 +1,457 @@
+@using HomeRadar.Data
+@using HomeRadar.Data.Entities
+@using HomeRadar.Services.MyHome.Models
+@using Microsoft.EntityFrameworkCore
+@inject ApplicationDbContext Db
+
+<div class="search-filters mb-4">
+    @* Deal Type *@
+    <div class="row mb-3">
+        <div class="col-12">
+            <label class="form-label fw-bold">Deal Type</label>
+            <div class="btn-group w-100" role="group">
+                @foreach (var dt in _dealTypes)
+                {
+                    var isActive = _selectedDealType == dt.Id;
+                    <button type="button" class="btn @(isActive ? "btn-primary" : "btn-outline-primary")"
+                            @onclick="() => _selectedDealType = dt.Id">@dt.DisplayName</button>
+                }
+            </div>
+        </div>
+    </div>
+
+    @* Property Type *@
+    <div class="row mb-3">
+        <div class="col-12">
+            <label class="form-label fw-bold">Property Type</label>
+            <div class="btn-group w-100" role="group">
+                @foreach (var pt in _realEstateTypes)
+                {
+                    var isActive = _selectedPropertyType == pt.Id;
+                    <button type="button" class="btn @(isActive ? "btn-primary" : "btn-outline-primary")"
+                            @onclick="() => _selectedPropertyType = pt.Id">@pt.DisplayName</button>
+                }
+            </div>
+        </div>
+    </div>
+
+    @* Location — City *@
+    <div class="row mb-3">
+        <div class="col-md-3">
+            <label class="form-label fw-bold">City</label>
+            <select class="form-select" @onchange="OnCityChanged">
+                <option value="">All Cities</option>
+                @foreach (var city in _cities)
+                {
+                    <option value="@city.Id" selected="@(_selectedCityId == city.Id)">@city.Title</option>
+                }
+            </select>
+        </div>
+        @if (_selectedUrbanIds.Count > 0)
+        {
+            <div class="col-md-9 d-flex align-items-end">
+                <div class="d-flex flex-wrap gap-1">
+                    @foreach (var urban in _urbans.Where(u => _selectedUrbanIds.Contains(u.Id)))
+                    {
+                        <span class="badge bg-primary d-flex align-items-center gap-1">
+                            @urban.Title
+                            <button type="button" class="btn-close btn-close-white" style="font-size: 0.5rem;"
+                                    @onclick="() => ToggleUrban(urban.Id, false)"></button>
+                        </span>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+
+    @* Districts + Urbans grid *@
+    @if (_districtsWithUrbans.Count > 0)
+    {
+        <div class="border rounded p-3 mb-3" style="max-height: 350px; overflow-y: auto;">
+            <div class="row">
+                @foreach (var group in _districtsWithUrbans)
+                {
+                    <div class="col-md-3 col-sm-6 mb-3">
+                        <div class="form-check fw-bold mb-1">
+                            <input class="form-check-input" type="checkbox"
+                                   id="mh-dist-@group.District.Id"
+                                   checked="@IsDistrictFullySelected(group)"
+                                   @onchange="e => ToggleWholeDistrict(group, (bool)e.Value!)" />
+                            <label class="form-check-label" for="mh-dist-@group.District.Id">@group.District.Title</label>
+                        </div>
+                        @foreach (var urban in group.Urbans)
+                        {
+                            <div class="form-check ms-3">
+                                <input class="form-check-input" type="checkbox"
+                                       id="mh-urban-@urban.Id"
+                                       checked="@_selectedUrbanIds.Contains(urban.Id)"
+                                       @onchange="e => ToggleUrban(urban.Id, (bool)e.Value!)" />
+                                <label class="form-check-label" for="mh-urban-@urban.Id">@urban.Title</label>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
+    @* Price *@
+    <div class="row mb-3">
+        <div class="col-md-3">
+            <label class="form-label fw-bold">Currency</label>
+            <select class="form-select" @bind="_currencyId">
+                <option value="1">GEL</option>
+                <option value="2">USD</option>
+            </select>
+        </div>
+        <div class="col-md-3">
+            <label class="form-label fw-bold">Area Type</label>
+            <select class="form-select" @bind="_areaType">
+                <option value="1">m²</option>
+                <option value="2">Acres</option>
+            </select>
+        </div>
+        <div class="col-md-3">
+            <label class="form-label fw-bold">Price/m² From</label>
+            <input type="number" class="form-control" @bind="_squarePriceFrom" placeholder="Min" />
+        </div>
+        <div class="col-md-3">
+            <label class="form-label fw-bold">Price/m² To</label>
+            <input type="number" class="form-control" @bind="_squarePriceTo" placeholder="Max" />
+        </div>
+    </div>
+
+    @* Total Price *@
+    <div class="row mb-3">
+        <div class="col-md-3">
+            <label class="form-label fw-bold">Total Price From</label>
+            <input type="number" class="form-control" @bind="_priceFrom" placeholder="Min" />
+        </div>
+        <div class="col-md-3">
+            <label class="form-label fw-bold">Total Price To</label>
+            <input type="number" class="form-control" @bind="_priceTo" placeholder="Max" />
+        </div>
+        <div class="col-md-3">
+            <label class="form-label fw-bold">Area From (m²)</label>
+            <input type="number" class="form-control" @bind="_areaFrom" placeholder="Min" />
+        </div>
+        <div class="col-md-3">
+            <label class="form-label fw-bold">Area To (m²)</label>
+            <input type="number" class="form-control" @bind="_areaTo" placeholder="Max" />
+        </div>
+    </div>
+
+    @* Floor / Rooms *@
+    <div class="row mb-3">
+        <div class="col-md-2">
+            <label class="form-label fw-bold">Floor From</label>
+            <input type="number" class="form-control" @bind="_floorFrom" placeholder="Min" />
+        </div>
+        <div class="col-md-2">
+            <label class="form-label fw-bold">Floor To</label>
+            <input type="number" class="form-control" @bind="_floorTo" placeholder="Max" />
+        </div>
+        <div class="col-md-2 d-flex align-items-end">
+            <div class="form-check mb-2">
+                <input class="form-check-input" type="checkbox" id="notFirst" @bind="_notFirst" />
+                <label class="form-check-label" for="notFirst">Not first floor</label>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <label class="form-label fw-bold">Rooms</label>
+            <div class="btn-group" role="group">
+                @for (int i = 1; i <= 6; i++)
+                {
+                    var room = i;
+                    var isActive = _selectedRooms.Contains(room);
+                    <button type="button" class="btn btn-sm @(isActive ? "btn-primary" : "btn-outline-secondary")"
+                            @onclick="() => Toggle(_selectedRooms, room)">@(room == 6 ? "6+" : room.ToString())</button>
+                }
+            </div>
+        </div>
+        <div class="col-md-3">
+            <label class="form-label fw-bold">Bedrooms</label>
+            <div class="btn-group" role="group">
+                @for (int i = 1; i <= 5; i++)
+                {
+                    var bed = i;
+                    var isActive = _selectedBedrooms.Contains(bed);
+                    <button type="button" class="btn btn-sm @(isActive ? "btn-primary" : "btn-outline-secondary")"
+                            @onclick="() => Toggle(_selectedBedrooms, bed)">@(bed == 5 ? "5+" : bed.ToString())</button>
+                }
+            </div>
+        </div>
+    </div>
+
+    @* Condition / Status *@
+    <div class="row mb-3">
+        <div class="col-md-6">
+            <label class="form-label fw-bold">Condition</label>
+            <div class="btn-group flex-wrap" role="group">
+                @foreach (var s in _statuses)
+                {
+                    var isActive = _selectedStatuses.Contains(s.Id);
+                    <button type="button" class="btn btn-sm @(isActive ? "btn-primary" : "btn-outline-secondary")"
+                            @onclick="() => Toggle(_selectedStatuses, s.Id)">@s.DisplayName</button>
+                }
+            </div>
+        </div>
+    </div>
+
+    @* Market Price Category *@
+    <div class="row mb-3">
+        <div class="col-12">
+            <label class="form-label fw-bold">Market Price</label>
+            <div class="d-flex gap-1">
+                @foreach (var pl in _priceLabels)
+                {
+                    var isActive = _selectedPriceLabels.Contains(pl.Value);
+                    <button type="button"
+                            class="btn btn-sm flex-fill @(isActive ? "" : "btn-outline-secondary")"
+                            style="@(isActive ? $"background-color:{pl.Color};color:white;border-color:{pl.Color}" : "")"
+                            @onclick="() => TogglePriceLabel(pl.Value)">
+                        @pl.Label
+                    </button>
+                }
+            </div>
+        </div>
+    </div>
+
+    @* Sort & Search *@
+    <div class="row mb-3">
+        <div class="col-md-4">
+            <label class="form-label fw-bold">Sort By</label>
+            <select class="form-select" @bind="_sortValue">
+                <option value="">Default</option>
+                <option value="date_desc">Date: Newest First</option>
+                <option value="date_asc">Date: Oldest First</option>
+                <option value="price_asc">Price: Low to High</option>
+                <option value="price_desc">Price: High to Low</option>
+            </select>
+        </div>
+        <div class="col-md-8 d-flex align-items-end">
+            <button class="btn btn-primary btn-lg w-100" @onclick="ExecuteSearch" disabled="@IsLoading">
+                @if (IsLoading)
+                {
+                    <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                }
+                @ButtonLabel
+            </button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public EventCallback<string> OnSearch { get; set; }
+    [Parameter] public bool IsLoading { get; set; }
+    [Parameter] public string ButtonLabel { get; set; } = "Search";
+    [Parameter] public string? InitialQueryString { get; set; }
+
+    private int _selectedDealType = 1;
+    private int _selectedPropertyType = 1;
+    private int? _selectedCityId;
+
+    private List<MyHomeCity> _cities = [];
+    private List<DistrictGroup> _districtsWithUrbans = [];
+    private List<MyHomeUrban> _urbans = [];
+    private HashSet<int> _selectedUrbanIds = [];
+
+    private int _currencyId = 2;
+    private int _areaType = 1;
+    private int? _squarePriceFrom;
+    private int? _squarePriceTo;
+    private int? _priceFrom;
+    private int? _priceTo;
+    private int? _areaFrom;
+    private int? _areaTo;
+    private int? _floorFrom;
+    private int? _floorTo;
+    private bool _notFirst;
+
+    private HashSet<int> _selectedRooms = [];
+    private HashSet<int> _selectedBedrooms = [];
+    private HashSet<int> _selectedStatuses = [];
+    private HashSet<string> _selectedPriceLabels = [];
+    private string _sortValue = "";
+
+    private static readonly (string Value, string Label, string Color)[] _priceLabels =
+    [
+        ("top_price", "Top Price", "#0ac856"),
+        ("good_price", "Good Price", "#a0ce43"),
+        ("middle_price", "Middle Price", "#ffd335"),
+        ("high_middle_price", "Mid-High Price", "#ffbb0b"),
+        ("high_price", "High Price", "#fc2357"),
+    ];
+
+    // Reference data loaded from API parameters
+    private List<MyHomeEnumItem> _dealTypes = [
+        new() { Id = 1, DisplayName = "იყიდება" },
+        new() { Id = 2, DisplayName = "ქირავდება" },
+        new() { Id = 3, DisplayName = "გირავდება" },
+        new() { Id = 4, DisplayName = "ქირავდება დღიურად" },
+    ];
+
+    private List<MyHomeEnumItem> _realEstateTypes = [
+        new() { Id = 1, DisplayName = "ბინა" },
+        new() { Id = 2, DisplayName = "კერძო სახლი" },
+        new() { Id = 3, DisplayName = "აგარაკი" },
+        new() { Id = 4, DisplayName = "მიწა" },
+        new() { Id = 5, DisplayName = "კომერციული" },
+        new() { Id = 6, DisplayName = "სასტუმრო" },
+    ];
+
+    private List<MyHomeEnumItem> _statuses = [
+        new() { Id = 1, DisplayName = "ახალი აშენებული" },
+        new() { Id = 2, DisplayName = "ძველი აშენებული" },
+        new() { Id = 3, DisplayName = "მშენებარე" },
+    ];
+
+    private record DistrictGroup(MyHomeDistrict District, List<MyHomeUrban> Urbans);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _cities = await Db.MyHomeCities.OrderBy(c => c.Title).ToListAsync();
+
+        if (InitialQueryString is not null)
+            await LoadFromQueryString(InitialQueryString);
+    }
+
+    public async Task LoadFromQueryString(string qs)
+    {
+        var p = System.Web.HttpUtility.ParseQueryString(qs);
+
+        if (int.TryParse(p["deal_types"], out var dt)) _selectedDealType = dt;
+        if (int.TryParse(p["real_estate_types"], out var ret)) _selectedPropertyType = ret;
+        if (int.TryParse(p["currency_id"], out var cur)) _currencyId = cur;
+        if (int.TryParse(p["area_types"], out var at)) _areaType = at;
+        if (int.TryParse(p["square_price_from"], out var spf)) _squarePriceFrom = spf;
+        if (int.TryParse(p["square_price_to"], out var spt)) _squarePriceTo = spt;
+        if (int.TryParse(p["price_from"], out var pf)) _priceFrom = pf;
+        if (int.TryParse(p["price_to"], out var pt2)) _priceTo = pt2;
+        if (int.TryParse(p["area_from"], out var af)) _areaFrom = af;
+        if (int.TryParse(p["area_to"], out var ato)) _areaTo = ato;
+        if (int.TryParse(p["floor_from"], out var ff)) _floorFrom = ff;
+        if (int.TryParse(p["floor_to"], out var ft)) _floorTo = ft;
+
+        if (int.TryParse(p["cities"], out var cityId))
+        {
+            _selectedCityId = cityId;
+            await LoadDistricts();
+        }
+
+        if (p["urbans"] is { } urbansStr)
+            _selectedUrbanIds = [.. urbansStr.Split(',').Select(int.Parse)];
+        if (p["rooms"] is { } roomsStr)
+            _selectedRooms = [.. roomsStr.Split(',').Select(int.Parse)];
+        if (p["bedrooms"] is { } bedsStr)
+            _selectedBedrooms = [.. bedsStr.Split(',').Select(int.Parse)];
+        if (p["statuses"] is { } statusStr)
+            _selectedStatuses = [.. statusStr.Split(',').Select(int.Parse)];
+        if (p["not_first"] is "1") _notFirst = true;
+        if (p["price_labels"] is { } priceLabelsStr)
+            _selectedPriceLabels = [.. priceLabelsStr.Split(',')];
+        if (p["order_by"] is { } orderBy && p["sequence"] is { } seq)
+            _sortValue = $"{orderBy}_{seq}";
+
+        StateHasChanged();
+    }
+
+    private async Task OnCityChanged(ChangeEventArgs e)
+    {
+        _selectedCityId = int.TryParse(e.Value?.ToString(), out var id) ? id : null;
+        _selectedUrbanIds.Clear();
+        await LoadDistricts();
+    }
+
+    private async Task LoadDistricts()
+    {
+        if (_selectedCityId.HasValue)
+        {
+            var districts = await Db.MyHomeDistricts
+                .Where(d => d.CityId == _selectedCityId.Value)
+                .Include(d => d.Urbans)
+                .OrderBy(d => d.Title)
+                .ToListAsync();
+
+            _districtsWithUrbans = districts.Select(d => new DistrictGroup(d,
+                d.Urbans.OrderBy(u => u.Title).ToList())).ToList();
+            _urbans = _districtsWithUrbans.SelectMany(g => g.Urbans).ToList();
+        }
+        else
+        {
+            _districtsWithUrbans = [];
+            _urbans = [];
+        }
+    }
+
+    private void ToggleWholeDistrict(DistrictGroup group, bool isChecked)
+    {
+        foreach (var urban in group.Urbans)
+        {
+            if (isChecked) _selectedUrbanIds.Add(urban.Id);
+            else _selectedUrbanIds.Remove(urban.Id);
+        }
+    }
+
+    private bool IsDistrictFullySelected(DistrictGroup group)
+        => group.Urbans.Count > 0 && group.Urbans.All(u => _selectedUrbanIds.Contains(u.Id));
+
+    private void ToggleUrban(int id, bool isChecked)
+    {
+        if (isChecked) _selectedUrbanIds.Add(id);
+        else _selectedUrbanIds.Remove(id);
+    }
+
+    private void Toggle(HashSet<int> set, int val)
+    {
+        if (!set.Remove(val)) set.Add(val);
+    }
+
+    private void TogglePriceLabel(string val)
+    {
+        if (!_selectedPriceLabels.Remove(val)) _selectedPriceLabels.Add(val);
+    }
+
+    private async Task ExecuteSearch()
+    {
+        var qs = BuildQueryString();
+        await OnSearch.InvokeAsync(qs);
+    }
+
+    public string BuildQueryString()
+    {
+        var parts = new List<string>
+        {
+            $"deal_types={_selectedDealType}",
+            $"real_estate_types={_selectedPropertyType}"
+        };
+
+        if (_selectedCityId.HasValue) parts.Add($"cities={_selectedCityId}");
+        if (_selectedUrbanIds.Count > 0) parts.Add($"urbans={string.Join(",", _selectedUrbanIds.OrderBy(x => x))}");
+        if (_currencyId != 0) parts.Add($"currency_id={_currencyId}");
+        if (_areaType != 0) parts.Add($"area_types={_areaType}");
+        if (_squarePriceFrom.HasValue) parts.Add($"square_price_from={_squarePriceFrom}");
+        if (_squarePriceTo.HasValue) parts.Add($"square_price_to={_squarePriceTo}");
+        if (_priceFrom.HasValue) parts.Add($"price_from={_priceFrom}");
+        if (_priceTo.HasValue) parts.Add($"price_to={_priceTo}");
+        if (_areaFrom.HasValue) parts.Add($"area_from={_areaFrom}");
+        if (_areaTo.HasValue) parts.Add($"area_to={_areaTo}");
+        if (_floorFrom.HasValue) parts.Add($"floor_from={_floorFrom}");
+        if (_floorTo.HasValue) parts.Add($"floor_to={_floorTo}");
+        if (_selectedRooms.Count > 0) parts.Add($"rooms={string.Join(",", _selectedRooms.OrderBy(x => x))}");
+        if (_selectedBedrooms.Count > 0) parts.Add($"bedrooms={string.Join(",", _selectedBedrooms.OrderBy(x => x))}");
+        if (_selectedStatuses.Count > 0) parts.Add($"statuses={string.Join(",", _selectedStatuses.OrderBy(x => x))}");
+        if (_notFirst) parts.Add("not_first=1");
+        if (_selectedPriceLabels.Count > 0) parts.Add($"price_labels={string.Join(",", _selectedPriceLabels)}");
+
+        if (!string.IsNullOrEmpty(_sortValue))
+        {
+            var sortParts = _sortValue.Split('_', 2);
+            parts.Add($"order_by={sortParts[0]}");
+            parts.Add($"sequence={sortParts[1]}");
+        }
+
+        parts.Add("page=1");
+        return string.Join("&", parts);
+    }
+}

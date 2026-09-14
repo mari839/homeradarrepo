@@ -116,25 +116,43 @@ public class TelegramBotListenerService : BackgroundService
         using var scope = _serviceProvider.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
-        var filter = await db.SavedFilters
+        // Check SS.GE filters
+        var ssFilter = await db.SavedFilters
             .FirstOrDefaultAsync(f => f.TelegramLinkCode == code, ct);
 
-        if (filter is null)
+        if (ssFilter is not null)
         {
-            await SendReplyAsync(chatId, "Invalid or expired code. Please get a new code from the Saved Filters page.", ct);
+            ssFilter.TelegramChatId = chatId;
+            ssFilter.TelegramLinkCode = null;
+            await db.SaveChangesAsync(ct);
+
+            _logger.LogInformation("SS.GE filter {FilterId} '{FilterName}' linked to chat {ChatId}",
+                ssFilter.Id, ssFilter.Name, chatId);
+
+            await SendReplyAsync(chatId,
+                $"Connected! This chat will receive SS.GE notifications for: \"{ssFilter.Name}\"", ct);
             return;
         }
 
-        filter.TelegramChatId = chatId;
-        filter.TelegramLinkCode = null; // code is used, clear it
-        await db.SaveChangesAsync(ct);
+        // Check MyHome filters
+        var myHomeFilter = await db.MyHomeSavedFilters
+            .FirstOrDefaultAsync(f => f.TelegramLinkCode == code, ct);
 
-        _logger.LogInformation("Filter {FilterId} '{FilterName}' linked to Telegram chat {ChatId}",
-            filter.Id, filter.Name, chatId);
+        if (myHomeFilter is not null)
+        {
+            myHomeFilter.TelegramChatId = chatId;
+            myHomeFilter.TelegramLinkCode = null;
+            await db.SaveChangesAsync(ct);
 
-        await SendReplyAsync(chatId,
-            $"Connected! This chat will receive notifications for filter: \"{filter.Name}\"",
-            ct);
+            _logger.LogInformation("MyHome filter {FilterId} '{FilterName}' linked to chat {ChatId}",
+                myHomeFilter.Id, myHomeFilter.Name, chatId);
+
+            await SendReplyAsync(chatId,
+                $"Connected! This chat will receive MyHome.ge notifications for: \"{myHomeFilter.Name}\"", ct);
+            return;
+        }
+
+        await SendReplyAsync(chatId, "Invalid or expired code. Please get a new code from the Saved Filters page.", ct);
     }
 
     private async Task SendReplyAsync(string chatId, string text, CancellationToken ct)

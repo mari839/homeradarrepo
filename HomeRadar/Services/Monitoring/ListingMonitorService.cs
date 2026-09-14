@@ -15,7 +15,7 @@ public class ListingMonitorService : BackgroundService
 
     private static readonly TimeSpan PollInterval = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan DelayBetweenFilters = TimeSpan.FromMilliseconds(500);
-    private static readonly TimeSpan DelayBetweenNotifications = TimeSpan.FromMilliseconds(200);
+    private static readonly TimeSpan DelayBetweenNotifications = TimeSpan.FromSeconds(5);
 
     // Track recently notified listing IDs per filter to prevent duplicates
     private readonly Dictionary<int, HashSet<int>> _notifiedIds = new();
@@ -91,7 +91,7 @@ public class ListingMonitorService : BackgroundService
             return;
         }
 
-        // Fetch newest listings
+        // Fetch newest listings — order=1 bypasses VIP on SS.GE
         request.Order = 1; // DateDesc (newest first)
         request.Page = 1;
         request.PageSize = 16;
@@ -110,7 +110,7 @@ public class ListingMonitorService : BackgroundService
             _notifiedIds[filter.Id] = notified;
         }
 
-        // First run — record current IDs as already seen, don't notify
+        // Very first run — just record baseline, no notifications
         if (filter.LastSeenApplicationId is null)
         {
             foreach (var listing in response.Listings)
@@ -119,9 +119,20 @@ public class ListingMonitorService : BackgroundService
             filter.LastSeenApplicationId = response.Listings.Max(l => l.ApplicationId);
             filter.LastCheckedAt = DateTime.UtcNow;
 
-            _logger.LogInformation("Filter {FilterId} '{FilterName}': first check, recorded {Count} existing listings",
-                filter.Id, filter.Name, response.Listings.Count);
+            _logger.LogInformation("Filter {FilterId} '{FilterName}': first run, baseline recorded {Count} listings, watermark={MaxId}",
+                filter.Id, filter.Name, response.Listings.Count, filter.LastSeenApplicationId);
             return;
+        }
+
+        // App restart — populate notified set with known old listings, but let new ones through
+        if (notified.Count == 0)
+        {
+            foreach (var listing in response.Listings.Where(l => l.ApplicationId <= filter.LastSeenApplicationId))
+                notified.Add(listing.ApplicationId);
+
+            _logger.LogInformation("Filter {FilterId} '{FilterName}': restart, restored {Count} known IDs, watermark={MaxId}",
+                filter.Id, filter.Name, notified.Count, filter.LastSeenApplicationId);
+            // Don't return — fall through to normal detection below
         }
 
         // Find listings we haven't notified about yet

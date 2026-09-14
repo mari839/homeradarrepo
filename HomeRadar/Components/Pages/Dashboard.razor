@@ -1,0 +1,129 @@
+@page "/dashboard"
+@rendermode InteractiveServer
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using HomeRadar.Data
+@using HomeRadar.Data.Entities
+@inject ApplicationDbContext Db
+@inject AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>Dashboard - HomeRadar</PageTitle>
+
+<h3 class="mb-4">My Filters</h3>
+
+@* SS.GE Filters *@
+<div class="mb-3">
+    <h5 class="mb-0">SS.GE <a href="/saved-filters" class="btn btn-outline-primary btn-sm ms-2">Manage</a></h5>
+</div>
+
+@if (_ssGeFilters is null)
+{
+    <p class="text-muted">Loading...</p>
+}
+else if (_ssGeFilters.Count == 0)
+{
+    <div class="alert alert-light border mb-4">No SS.GE filters yet. <a href="/saved-filters">Create one</a></div>
+}
+else
+{
+    <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-3 mb-4">
+        @foreach (var f in _ssGeFilters)
+        {
+            <div class="col">
+                <div class="card h-100 @(!f.IsActive ? "opacity-50" : "")">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <h6 class="card-title mb-1">@f.Name</h6>
+                            <span class="badge @(f.IsActive ? "bg-success" : "bg-secondary")">
+                                @(f.IsActive ? "Active" : "Paused")
+                            </span>
+                        </div>
+                        <div class="mt-2">
+                            @if (!string.IsNullOrEmpty(f.TelegramChatId))
+                            {
+                                <span class="badge bg-info me-1">Telegram</span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-warning text-dark me-1">No Telegram</span>
+                            }
+                        </div>
+                        <small class="text-muted d-block mt-2">
+                            Last checked: @(f.LastCheckedAt?.ToString("g") ?? "Never")
+                        </small>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@* MyHome Filters *@
+<div class="mb-3">
+    <h5 class="mb-0">MyHome.ge <a href="/myhome-saved-filters" class="btn btn-outline-primary btn-sm ms-2">Manage</a></h5>
+</div>
+
+@if (_myHomeFilters is null)
+{
+    <p class="text-muted">Loading...</p>
+}
+else if (_myHomeFilters.Count == 0)
+{
+    <div class="alert alert-light border mb-4">No MyHome filters yet. <a href="/myhome-saved-filters">Create one</a></div>
+}
+else
+{
+    <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-3 mb-4">
+        @foreach (var f in _myHomeFilters)
+        {
+            <div class="col">
+                <div class="card h-100 @(!f.IsActive ? "opacity-50" : "")">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <h6 class="card-title mb-1">@f.Name</h6>
+                            <span class="badge @(f.IsActive ? "bg-success" : "bg-secondary")">
+                                @(f.IsActive ? "Active" : "Paused")
+                            </span>
+                        </div>
+                        <div class="mt-2">
+                            @if (!string.IsNullOrEmpty(f.TelegramChatId))
+                            {
+                                <span class="badge bg-info me-1">Telegram</span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-warning text-dark me-1">No Telegram</span>
+                            }
+                        </div>
+                        <small class="text-muted d-block mt-2">
+                            Last checked: @(f.LastCheckedAt?.ToString("g") ?? "Never")
+                        </small>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private List<SavedFilter>? _ssGeFilters;
+    private List<MyHomeSavedFilter>? _myHomeFilters;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var userId = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (userId is null) return;
+
+        _ssGeFilters = await Db.SavedFilters
+            .Where(f => f.UserId == userId)
+            .OrderByDescending(f => f.CreatedAt)
+            .ToListAsync();
+
+        _myHomeFilters = await Db.MyHomeSavedFilters
+            .Where(f => f.UserId == userId)
+            .OrderByDescending(f => f.CreatedAt)
+            .ToListAsync();
+    }
+}

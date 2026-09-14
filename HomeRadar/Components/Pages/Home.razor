@@ -1,7 +1,42 @@
-﻿@page "/"
+@page "/"
+@using Microsoft.AspNetCore.Components.Authorization
+@inject NavigationManager Navigation
 
-<PageTitle>Home</PageTitle>
+<PageTitle>HomeRadar</PageTitle>
 
-<h1>Hello, world!</h1>
+<AuthorizeView>
+    <Authorized>
+        @* Redirect logged-in users to dashboard *@
+    </Authorized>
+    <NotAuthorized>
+        <div class="d-flex justify-content-center align-items-center" style="min-height: 70vh;">
+            <div class="text-center" style="max-width: 500px;">
+                <h1 class="display-4 fw-bold mb-3">HomeRadar</h1>
+                <p class="lead text-muted mb-4">
+                    Monitor real estate listings from SS.GE and MyHome.ge.
+                    Set up filters and get instant Telegram notifications when new properties match your criteria.
+                </p>
+                <div class="d-flex gap-3 justify-content-center">
+                    <a href="Account/Login" class="btn btn-primary btn-lg px-5">Sign In</a>
+                    <a href="Account/Register" class="btn btn-outline-primary btn-lg px-5">Register</a>
+                </div>
+            </div>
+        </div>
+    </NotAuthorized>
+</AuthorizeView>
 
-Welcome to your new app.
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState is not null)
+        {
+            var state = await AuthState;
+            if (state.User.Identity?.IsAuthenticated == true)
+            {
+                Navigation.NavigateTo("/dashboard", forceLoad: true, replace: true);
+            }
+        }
+    }
+}

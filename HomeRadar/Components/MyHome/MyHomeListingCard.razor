@@ -1,0 +1,72 @@
+@using HomeRadar.Services.MyHome.Models
+
+<div class="card h-100 listing-card">
+    @if (!string.IsNullOrEmpty(Listing.MainImageUrl))
+    {
+        <div class="position-relative">
+            <img src="@Listing.MainImageUrl" class="card-img-top" alt="@Listing.DynamicTitle"
+                 style="height: 200px; object-fit: cover;" loading="lazy" />
+            @if (Listing.Images?.Count > 1)
+            {
+                <span class="badge bg-dark position-absolute bottom-0 end-0 m-2">@Listing.Images.Count photos</span>
+            }
+            @if (Listing.IsSuperVip == true)
+            {
+                <span class="badge bg-warning text-dark position-absolute top-0 start-0 m-2">Super VIP</span>
+            }
+            else if (Listing.IsVip == true)
+            {
+                <span class="badge bg-info position-absolute top-0 start-0 m-2">VIP</span>
+            }
+        </div>
+    }
+
+    <div class="card-body d-flex flex-column">
+        <div class="mb-2">
+            <h6 class="card-title text-primary fw-bold mb-0">$@Listing.PriceUsd.ToString("N0")</h6>
+            <small class="text-muted">
+                @Listing.PriceGel.ToString("N0") GEL
+                @if (Listing.UnitPriceUsd > 0)
+                {
+                    <span> | $@Listing.UnitPriceUsd.ToString("N0")/m²</span>
+                }
+            </small>
+        </div>
+
+        <p class="card-text small text-muted mb-2">
+            <strong>@Listing.DisplayAddress</strong>
+        </p>
+
+        <div class="d-flex flex-wrap gap-2 mb-2">
+            @if (Listing.Area > 0)
+            {
+                <span class="badge bg-light text-dark border">@Listing.Area m²</span>
+            }
+            @if (Listing.Floor > 0)
+            {
+                <span class="badge bg-light text-dark border">
+                    Floor @Listing.Floor@(Listing.TotalFloors > 0 ? $"/{Listing.TotalFloors}" : "")
+                </span>
+            }
+            @if (!string.IsNullOrEmpty(Listing.Room))
+            {
+                <span class="badge bg-light text-dark border">@Listing.Room rooms</span>
+            }
+            @if (!string.IsNullOrEmpty(Listing.Bedroom))
+            {
+                <span class="badge bg-light text-dark border">@Listing.Bedroom bed</span>
+            }
+        </div>
+
+        <div class="mt-auto">
+            <a href="@Listing.DetailPageUrl" target="_blank" rel="noopener noreferrer"
+               class="btn btn-outline-primary btn-sm w-100">
+                View on MyHome.ge
+            </a>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public MyHomeListing Listing { get; set; } = null!;
+}
